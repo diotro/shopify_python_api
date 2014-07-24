@@ -1,28 +1,34 @@
 import pyactiveresource.connection
-from pyactiveresource.activeresource import ActiveResource, ResourceMeta
+from pyactiveresource.activeresource import ActiveResource, ResourceMeta, formats
 import shopify.yamlobjects
 import shopify.mixins as mixins
 import shopify
 import threading
-import urllib
-import urllib2
-import urlparse
 import sys
+from six.moves import urllib
+import six
+
 
 # Store the response from the last request in the connection object
 class ShopifyConnection(pyactiveresource.connection.Connection):
     response = None
+
+    def __init__(self, site, user=None, password=None, timeout=None,
+                 format=formats.JSONFormat):
+        super(ShopifyConnection, self).__init__(site, user, password, timeout, format)
+
     def _open(self, *args, **kwargs):
         self.response = None
         try:
             self.response = super(ShopifyConnection, self)._open(*args, **kwargs)
-        except pyactiveresource.connection.ConnectionError, err:
+        except pyactiveresource.connection.ConnectionError as err:
             self.response = err.response
             raise
         return self.response
 
 # Inherit from pyactiveresource's metaclass in order to use ShopifyConnection
 class ShopifyResourceMeta(ResourceMeta):
+
     @property
     def connection(cls):
         """HTTP connection for the current thread"""
@@ -68,14 +74,11 @@ class ShopifyResourceMeta(ResourceMeta):
         cls._threadlocal.connection = None
         ShopifyResource._site = cls._threadlocal.site = value
         if value is not None:
-            host = urlparse.urlsplit(value)[1]
-            auth_info, host = urllib2.splituser(host)
-            if auth_info:
-                user, password = urllib2.splitpasswd(auth_info)
-                if user:
-                    cls.user = urllib.unquote(user)
-                if password:
-                    cls.password = urllib.unquote(password)
+            parts = urllib.parse.urlparse(value)
+            if parts.username:
+                cls.user = urllib.parse.unquote(parts.username)
+            if parts.password:
+                cls.password = urllib.parse.unquote(parts.password)
 
     site = property(get_site, set_site, None,
                     'The base REST site to connect to.')
@@ -92,7 +95,7 @@ class ShopifyResourceMeta(ResourceMeta):
 
     def get_headers(cls):
         if not hasattr(cls._threadlocal, 'headers'):
-            cls._threadlocal.headers = ShopifyResource._headers
+            cls._threadlocal.headers = ShopifyResource._headers.copy()
         return cls._threadlocal.headers
 
     def set_headers(cls, value):
@@ -111,21 +114,12 @@ class ShopifyResourceMeta(ResourceMeta):
     format = property(get_format, set_format, None,
                       'Encoding used for request and responses')
 
-    def get_primary_key(cls):
-        return cls._primary_key
 
-    def set_primary_key(cls, value):
-        cls._primary_key = value
-
-    primary_key = property(get_primary_key, set_primary_key, None,
-                           'Name of attribute that uniquely identies the resource')
-
-
+@six.add_metaclass(ShopifyResourceMeta)
 class ShopifyResource(ActiveResource, mixins.Countable):
-    __metaclass__ = ShopifyResourceMeta
-    _primary_key = "id"
+    _format = formats.JSONFormat
     _threadlocal = threading.local()
-    _headers = { 'User-Agent': 'ShopifyPythonAPI/%s Python/%s' % (shopify.VERSION, sys.version.split(' ', 1)[0]) }
+    _headers = {'User-Agent': 'ShopifyPythonAPI/%s Python/%s' % (shopify.VERSION, sys.version.split(' ', 1)[0])}
 
     def __init__(self, attributes=None, prefix_options=None):
         if isinstance(attributes, dict) and prefix_options is None:
@@ -136,28 +130,19 @@ class ShopifyResource(ActiveResource, mixins.Countable):
         return not self.id
 
     def _load_attributes_from_response(self, response):
-        self._update(self.__class__.format.decode(response.body))
-
-    def __get_id(self):
-        return self.attributes.get(self.klass.primary_key)
-
-    def __set_id(self, value):
-        self.attributes[self.klass.primary_key] = value
-
-    id = property(__get_id, __set_id, None, 'Value stored in the primary key')
+        if response.body.strip():
+            self._update(self.__class__.format.decode(response.body))
 
     @classmethod
     def activate_session(cls, session):
         cls.site = session.site
-        if not session.legacy:
-            cls.user = None
-            cls.password = None
-            cls.headers['X-Shopify-Access-Token'] = session.token
+        cls.user = None
+        cls.password = None
+        cls.headers['X-Shopify-Access-Token'] = session.token
 
     @classmethod
     def clear_session(cls):
         cls.site = None
         cls.user = None
         cls.password = None
-        if 'X-Shopify-Access-Token' in cls.headers:
-            del cls.headers['X-Shopify-Access-Token']
+        cls.headers.pop('X-Shopify-Access-Token', None)

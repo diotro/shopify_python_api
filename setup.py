@@ -1,7 +1,7 @@
-from distutils.core import setup
+from setuptools import setup
 
 NAME='ShopifyAPI'
-execfile('shopify/version.py')
+exec(open('shopify/version.py').read())
 DESCRIPTION='Shopify API for Python'
 LONG_DESCRIPTION="""\
 The ShopifyAPI library allows python developers to programmatically
@@ -15,15 +15,19 @@ setup(name=NAME,
       description=DESCRIPTION,
       long_description=LONG_DESCRIPTION,
       author='Shopify',
-      author_email='developers@jadedpixel.com',
+      author_email='developers@shopify.com',
       url='https://github.com/Shopify/shopify_python_api',
-      packages=['shopify'],
+      packages=['shopify', 'shopify/resources'],
       scripts=['scripts/shopify_api.py'],
       license='MIT License',
       install_requires=[
-          'pyactiveresource>=1.0.2',
-          'python-dateutil<2.0', # >= 2.0 is for python>=3.0
+          'pyactiveresource>=2.1.0',
           'PyYAML',
+          'six',
+      ],
+      test_suite='test',
+      tests_require=[
+        'mock>=1.0.1',
       ],
       platforms='Any',
       classifiers=['Development Status :: 5 - Production/Stable',
@@ -31,6 +35,10 @@ setup(name=NAME,
                    'License :: OSI Approved :: MIT License',
                    'Operating System :: OS Independent',
                    'Programming Language :: Python',
+                   'Programming Language :: Python :: 2',
+                   'Programming Language :: Python :: 2.7',
+                   'Programming Language :: Python :: 3',
+                   'Programming Language :: Python :: 3.4',
                    'Topic :: Software Development',
                    'Topic :: Software Development :: Libraries',
                    'Topic :: Software Development :: Libraries :: Python Modules']
